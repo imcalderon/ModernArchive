@@ -131,8 +131,16 @@ int main(int argc, char* argv[]) {
         else if (command == "list") {
             auto files = archive.getFileList();
             std::cout << "Archive contents (" << files.size() << " files):\n";
+            std::cout << std::string(60, '-') << "\n";
+            std::cout << "Name                                              Size      Compressed\n";
+            std::cout << std::string(60, '-') << "\n";
+            
             for (const auto& file : files) {
-                std::cout << file << "\n";
+                // Fixed: Access the name member and print formatted output
+                printf("%-48s %10llu %10llu\n", 
+                       file.name.c_str(), 
+                       static_cast<unsigned long long>(file.originalSize),
+                       static_cast<unsigned long long>(file.compressedSize));
             }
         }
         else {
