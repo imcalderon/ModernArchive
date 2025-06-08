@@ -1,0 +1,4 @@
+File in subdirectory 1
+with some content
+that should compress well
+due to repetition repetition repetition.

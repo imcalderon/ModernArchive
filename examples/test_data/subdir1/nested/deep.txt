@@ -1,0 +1,2 @@
+This is a deeply nested file
+to test directory structure preservation.
