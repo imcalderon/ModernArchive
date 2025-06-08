@@ -23,8 +23,7 @@ public:
     bool listArchiveContents(const std::string& archiveName) const;
 
 private:
-    CompressionType compressionType = CompressionType::Deflate;
-    CompressionLevel compressionLevel = CompressionLevel::Normal;
+    CompressionType compressionType = CompressionType::Normal;
     bool promptOverwrite = true;
     bool verboseOutput = true;
     std::string defaultExtractPath = ".";

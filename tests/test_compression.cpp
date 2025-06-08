@@ -63,14 +63,14 @@ protected:
 
 TEST_F(CompressionTest, CompressAndDecompress) {
     // Test file creation and compression
-    std::vector<std::string> files = {testFilePath.string()};
-    EXPECT_TRUE(archive->createArchive(files));
+    std::vector<fs::path> files = {testFilePath};
+    archive->create(files);
     
     // Verify archive was created
     EXPECT_TRUE(fs::exists(archivePath));
     
     // Extract the archive
-    EXPECT_TRUE(archive->extractArchive(extractDir.string()));
+    archive->extract(extractDir.string());
     
     // Verify extracted file exists
     fs::path extractedFile = extractDir / testFilePath.filename();

@@ -1,6 +1,6 @@
 # ModernArchive
 
-A modern, cross-platform reimplementation of the Sonic Foundry self-extracting archive tool, rebuilt for today's development landscape with the assistance of AI.
+A modern, cross-platform reimplementation of and old self-extracting archive tool, rebuilt for today's development landscape with the assistance of AI.
 
 ## Historical Context
 

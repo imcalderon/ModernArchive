@@ -2,8 +2,7 @@
  * @file Version.h
  * @brief Version information for ModernArchive
  * 
- * This file maintains version information and tracks the evolution from
- * the original Sonic Foundry archiver to this modern reimplementation.
+ * This file maintains version information
  */
 
 #pragma once
@@ -20,12 +19,6 @@ constexpr const char* PROJECT_DESCRIPTION = "Modern Cross-Platform Archive Utili
 
 /**
  * Version history:
- * 
- * 1.0 (Original Sonic Foundry Version, late 1990s)
- * - Windows-only implementation
- * - Custom compression algorithms
- * - Self-extracting executable format
- * - GUI-based extraction
  * 
  * 2.0 (Modern Reimplementation, 2025)
  * - Cross-platform support

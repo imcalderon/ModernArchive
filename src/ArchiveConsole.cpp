@@ -13,33 +13,33 @@ void ArchiveConsole::printUsage() const {
 bool ArchiveConsole::createArchive(const std::string& archiveName) {
     progress.startTracking("Creating archive");
     Archive archive(archiveName);
-    std::vector<std::string> files; // TODO: Implement file list collection
-    bool result = archive.createArchive(files);
+    std::vector<std::filesystem::path> files; // TODO: Implement file list collection
+    archive.create(files);
     progress.finishTracking();
-    return result;
+    return true;
 }
 
 bool ArchiveConsole::extractArchive(const std::string& archiveName, const std::string& outputDir) {
     progress.startTracking("Extracting archive");
     Archive archive(archiveName);
-    bool result = archive.extractArchive(outputDir);
+    archive.extract(outputDir);
     progress.finishTracking();
-    return result;
+    return true;
 }
 
 bool ArchiveConsole::listArchiveContents(const std::string& archiveName) const {
     Archive archive(archiveName);
-    const auto& entries = archive.getEntries();
+    const auto entries = archive.getFileList();
     std::cout << "Contents of '" << archiveName << "':" << std::endl;
-    std::cout << std::string(40, '-') << std::endl;
-    std::cout << "Name                                    Size      Compressed" << std::endl;
-    std::cout << std::string(40, '-') << std::endl;
+    std::cout << std::string(60, '-') << std::endl;
+    std::cout << "Name                                              Size      Compressed" << std::endl;
+    std::cout << std::string(60, '-') << std::endl;
     
     for (const auto& entry : entries) {
-        printf("%-40s %8llu %8llu\n", 
+        printf("%-48s %10llu %10llu\n", 
                entry.name.c_str(), 
-               entry.originalSize,
-               entry.compressedSize);
+               static_cast<unsigned long long>(entry.originalSize),
+               static_cast<unsigned long long>(entry.compressedSize));
     }
     return true;
 }

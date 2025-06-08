@@ -1,22 +1,11 @@
 /**
  * @file Archive.h
  * @brief Modern reimplementation of the Sonic Foundry archive format
- * 
- * This implementation is inspired by the original Sonic Foundry self-extracting archive
- * tool from the late 1990s, which was used to distribute software products like
- * Sound Forge. The original implementation was Windows-only and focused on creating
- * self-extracting executables for software distribution.
- * 
- * This modern reimplementation:
  * - Uses standard ZLIB compression instead of custom algorithms
  * - Supports cross-platform operation
  * - Implements modern C++ practices and RAII
  * - Provides comprehensive error handling
  * 
- * Historical Note:
- * The original Sonic Foundry archiver was part of their software distribution
- * toolkit and was known for its reliability and performance. This implementation
- * preserves those qualities while adapting to modern development practices.
  */
 
 #pragma once
@@ -58,6 +47,14 @@ public:
      */
     void create(const std::vector<std::filesystem::path>& files, 
                 CompressionType compression = CompressionType::Normal);
+
+    /**
+     * @brief Adds files to an existing archive
+     * @param files List of files to add
+     * @param compression Compression level to use
+     */
+    void add(const std::vector<std::filesystem::path>& files,
+             CompressionType compression = CompressionType::Normal);
 
     /**
      * @brief Extracts the archive contents

@@ -46,29 +46,36 @@ protected:
 };
 
 TEST_F(ArchiveTest, TestCreateArchive) {
-    std::vector<std::string> files = {testFile.string()};
-    EXPECT_TRUE(archive->createArchive(files));
+    std::vector<fs::path> files = {testFile};
+    archive->create(files);
     EXPECT_TRUE(fs::exists(testArchiveName));
 }
 
 TEST_F(ArchiveTest, TestAddFileToArchive) {
-    std::vector<std::string> files;
-    ASSERT_TRUE(archive->createArchive(files));
-    EXPECT_TRUE(archive->addFile(exampleFile.string()));
-    // Verify file was added by checking archive size
-    EXPECT_GT(fs::file_size(testArchiveName), 0);
+    // First create an archive with one file
+    std::vector<fs::path> files = {testFile};
+    archive->create(files);
+    
+    // Then add another file
+    std::vector<fs::path> newFiles = {exampleFile};
+    archive->add(newFiles);
+    
+    // Re-open the archive to read the updated file list
+    auto updatedArchive = std::make_unique<Archive>(testArchiveName);
+    auto entries = updatedArchive->getFileList();
+    EXPECT_EQ(entries.size(), 2);
 }
 
 TEST_F(ArchiveTest, TestExtractArchive) {
-    std::vector<std::string> files = {testFile.string()};
-    ASSERT_TRUE(archive->createArchive(files));
-    EXPECT_TRUE(archive->extractArchive(outputDir.string()));
+    std::vector<fs::path> files = {testFile};
+    archive->create(files);
+    archive->extract(outputDir.string());
     EXPECT_TRUE(fs::exists(outputDir / testFile.filename()));
 }
 
 TEST_F(ArchiveTest, TestProgressTracking) {
-    std::vector<std::string> files = {exampleFile.string()};
-    archive->createArchive(files);
+    std::vector<fs::path> files = {exampleFile};
+    archive->create(files);
     
     progress.startTracking("Testing progress");
     EXPECT_EQ(progress.getProgress(), 0); // Initially 0%
@@ -81,6 +88,11 @@ TEST_F(ArchiveTest, TestProgressTracking) {
 }
 
 TEST_F(ArchiveTest, TestInvalidArchive) {
-    EXPECT_FALSE(archive->extractArchive("nonexistent_directory"));
-    EXPECT_FALSE(archive->addFile("nonexistent_file.txt"));
+    // Test extracting from non-existent archive
+    Archive nonExistentArchive("nonexistent.arc");
+    EXPECT_THROW(nonExistentArchive.extract("nonexistent_directory"), std::runtime_error);
+    
+    // Test adding non-existent file
+    std::vector<fs::path> invalidFiles = {"nonexistent_file.txt"};
+    EXPECT_THROW(archive->add(invalidFiles), std::runtime_error);
 }

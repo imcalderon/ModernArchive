@@ -69,8 +69,23 @@ Archive::Archive(const std::string& archName) : archiveName(archName) {
 }
 
 void Archive::create(const std::vector<fs::path>& files, CompressionType compression) {
+    std::ofstream archive(archiveName, std::ios::binary);
+    if (!archive) {
+        throw std::runtime_error("Failed to create archive: " + archiveName);
+    }
+
+    entries.clear();
+
+    // Write dummy header - will be updated with file count later
+    FileHeader header{};
+    header.signature = SIGNATURE;
+    header.version = CURRENT_VERSION;
+    archive.write(reinterpret_cast<const char*>(&header), sizeof(header));
+
     if (files.empty()) {
-        throw std::runtime_error("No files specified for archive creation");
+        archive.close();
+        std::cout << "Archive '" << archiveName << "' created successfully (empty)." << std::endl;
+        return;
     }
 
     // Find common base path for all files
@@ -85,20 +100,6 @@ void Archive::create(const std::vector<fs::path>& files, CompressionType compres
             }
         }
     }
-
-    std::ofstream archive(archiveName, std::ios::binary);
-    if (!archive) {
-        throw std::runtime_error("Failed to create archive: " + archiveName);
-    }
-
-    entries.clear();
-
-    // Write dummy header - will be updated with file count later
-    FileHeader header{};
-    header.signature = SIGNATURE;
-    header.version = CURRENT_VERSION;
-    archive.write(reinterpret_cast<const char*>(&header), sizeof(header));
-
     for (const auto& file : files) {
         if (!fs::exists(file)) {
             throw std::runtime_error("File not found: " + file.string());
@@ -116,6 +117,50 @@ void Archive::create(const std::vector<fs::path>& files, CompressionType compres
     archive.close();
     std::cout << "Archive '" << archiveName << "' created successfully with " 
               << entries.size() << " files." << std::endl;
+}
+
+void Archive::add(const std::vector<fs::path>& files, CompressionType compression) {
+    if (files.empty()) {
+        throw std::runtime_error("No files specified for adding to archive");
+    }
+
+    // Open existing archive in append mode
+    std::ofstream archive(archiveName, std::ios::binary | std::ios::app);
+    if (!archive) {
+        throw std::runtime_error("Failed to open archive for appending: " + archiveName);
+    }
+
+    // Find common base path for new files
+    fs::path basePath;
+    if (files.size() > 1) {
+        basePath = files[0].parent_path();
+        for (const auto& file : files) {
+            auto parent = file.parent_path();
+            while (!basePath.empty() && !fs::equivalent(basePath, parent) && 
+                   !fs::equivalent(basePath, parent.parent_path())) {
+                basePath = basePath.parent_path();
+            }
+        }
+    }
+
+    size_t addedCount = 0;
+    for (const auto& file : files) {
+        if (!fs::exists(file)) {
+            throw std::runtime_error("File not found: " + file.string());
+        }
+
+        if (!fs::is_regular_file(file)) {
+            std::cerr << "Skipping non-regular file: " << file << std::endl;
+            continue;
+        }
+
+        std::string relativePath = makeArchivePath(file, basePath);
+        addFileToArchive(file, relativePath, archive, compression);
+        addedCount++;
+    }
+
+    archive.close();
+    std::cout << "Added " << addedCount << " files to archive '" << archiveName << "'." << std::endl;
 }
 
 std::vector<char> Archive::compressData(const std::vector<char>& input, CompressionType compression) {
@@ -263,5 +308,3 @@ void Archive::extract(const std::string& outputDir) {
     std::cout << "Archive '" << archiveName << "' extracted successfully to '" 
               << outputDir << "'." << std::endl;
 }
-
-// getFileList() is already defined in the header file
