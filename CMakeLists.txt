@@ -94,7 +94,7 @@ elseif(UNIX)
     endif()
 endif()
 
-# Create the executable
+# Create the main executable
 add_executable(archive src/main.cpp)
 target_link_libraries(archive PRIVATE libarchive)
 
@@ -106,6 +106,30 @@ if(WIN32)
         RUNTIME_OUTPUT_NAME "archive-${PROJECT_VERSION}"
     )
 endif()
+
+# Build the self-extractor stub
+add_executable(extractor_stub src/extractor_stub.cpp)
+# Make the stub statically linked and minimal
+if(WIN32)
+    if(MSVC)
+        set_target_properties(extractor_stub PROPERTIES
+            LINK_FLAGS "/SUBSYSTEM:CONSOLE"
+        )
+    else()
+        # MinGW/GCC on Windows
+        set_target_properties(extractor_stub PROPERTIES
+            LINK_FLAGS "-static -static-libgcc -static-libstdc++"
+        )
+    endif()
+else()
+    # Linux/Unix - create static executable
+    set_target_properties(extractor_stub PROPERTIES
+        LINK_FLAGS "-static"
+    )
+endif()
+
+# Link ZLIB to extractor_stub for decompression
+target_link_libraries(extractor_stub PRIVATE ZLIB::ZLIB)
 
 # Build examples
 add_executable(example_usage examples/example_usage.cpp)
@@ -147,7 +171,7 @@ if(BUILD_TESTS)
 endif()
 
 # Installation
-install(TARGETS archive libarchive example_usage
+install(TARGETS archive libarchive example_usage extractor_stub
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
@@ -161,4 +185,12 @@ install(FILES README.md LICENSE
 install(FILES ${ARCHIVE_HEADERS}
     DESTINATION include/archive
     COMPONENT development
+)
+
+# Create a custom target to copy extractor_stub to examples directory after build
+add_custom_command(TARGET extractor_stub POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy 
+        $<TARGET_FILE:extractor_stub>
+        ${CMAKE_SOURCE_DIR}/examples/
+    COMMENT "Copying extractor_stub to examples directory"
 )

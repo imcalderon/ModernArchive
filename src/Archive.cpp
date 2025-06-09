@@ -10,16 +10,19 @@
 #include <ctime>
 #include <array>
 #include <stdexcept>
+#include <cstdlib>
+#include <sstream>
+#include <cstring>
 
 namespace fs = std::filesystem;
 
 // Helper function to make paths relative and convert to archive format
-std::string makeArchivePath(const fs::path& file, const fs::path& basePath = {}) {
+std::string makeArchivePath(const std::filesystem::path& file, const std::filesystem::path& basePath = {}) {
     std::string result;
     if (basePath.empty()) {
         result = file.filename().string();
     } else {
-        result = fs::relative(file, basePath).string();
+        result = std::filesystem::relative(file, basePath).string();
     }
     // Convert to forward slashes for cross-platform compatibility
     std::replace(result.begin(), result.end(), '\\', '/');
@@ -66,6 +69,232 @@ Archive::Archive(const std::string& archName) : archiveName(archName) {
             file.seekg(header.compressedSize, std::ios::cur);
         }
     }
+}
+void Archive::createSelfExtracting(const std::vector<std::filesystem::path>& files,
+                                  const std::string& outputPath,
+                                  CompressionType compression,
+                                  const AutoExecConfig& autoExec,
+                                  const std::string& stubPath) {
+    if (files.empty()) {
+        throw std::runtime_error("No files specified for self-extracting archive");
+    }
+
+    // Step 1: Create archive data in memory
+    std::ostringstream archiveStream;
+    entries.clear();
+
+    // Find common base path for all files
+    std::filesystem::path basePath;
+    if (files.size() > 1) {
+        basePath = files[0].parent_path();
+        for (const auto& file : files) {
+            auto parent = file.parent_path();
+            while (!basePath.empty() && !std::filesystem::equivalent(basePath, parent) && 
+                   !std::filesystem::equivalent(basePath, parent.parent_path())) {
+                basePath = basePath.parent_path();
+            }
+        }
+    }
+
+    // Write archive header
+    FileHeader header{};
+    header.signature = SIGNATURE;
+    header.version = CURRENT_VERSION;
+    archiveStream.write(reinterpret_cast<const char*>(&header), sizeof(header));
+
+    // Add files to archive stream
+    for (const auto& file : files) {
+        if (!std::filesystem::exists(file)) {
+            throw std::runtime_error("File not found: " + file.string());
+        }
+
+        if (!std::filesystem::is_regular_file(file)) {
+            std::cerr << "Skipping non-regular file: " << file << std::endl;
+            continue;
+        }
+
+        std::string relativePath = makeArchivePath(file, basePath);
+        addFileToArchiveStream(file, relativePath, archiveStream, compression);
+    }
+
+    // Convert stream to vector
+    std::string archiveString = archiveStream.str();
+    std::vector<char> archiveData(archiveString.begin(), archiveString.end());
+
+    // Step 2: Get or build extractor stub
+    std::string actualStubPath = stubPath;
+    if (actualStubPath.empty()) {
+        actualStubPath = "extractor_stub.exe";
+        if (!buildExtractorStub(actualStubPath)) {
+            throw std::runtime_error("Failed to build extractor stub");
+        }
+    }
+
+    // Step 3: Combine stub with archive data and command config
+    if (!combineStubWithArchive(actualStubPath, archiveData, outputPath, autoExec)) {
+        throw std::runtime_error("Failed to create self-extracting executable");
+    }
+
+    std::cout << "Self-extracting executable '" << outputPath 
+              << "' created successfully with " << entries.size() << " files." << std::endl;
+    
+    if (!autoExec.command.empty()) {
+        std::cout << "Auto-execution configured: " << autoExec.command;
+        if (!autoExec.arguments.empty()) {
+            std::cout << " " << autoExec.arguments;
+        }
+        std::cout << std::endl;
+    }
+}
+
+bool Archive::buildExtractorStub(const std::string& outputPath) {
+    std::cout << "Building extractor stub..." << std::endl;
+    
+    // This assumes you have the extractor_stub.cpp in your project
+    // and a C++ compiler available
+    std::string compileCommand;
+    
+#ifdef _WIN32
+    // Try to use cl.exe (Visual Studio) or g++ (MinGW)
+    compileCommand = "cl.exe /Fe:" + outputPath + " extractor_stub.cpp /EHsc";
+    if (std::system("cl.exe >nul 2>&1") != 0) {
+        // Fall back to g++
+        compileCommand = "g++ -o " + outputPath + " extractor_stub.cpp -static";
+    }
+#else
+    compileCommand = "g++ -o " + outputPath + " extractor_stub.cpp -static";
+#endif
+
+    int result = std::system(compileCommand.c_str());
+    if (result != 0) {
+        std::cerr << "Failed to compile extractor stub. Make sure you have:" << std::endl;
+        std::cerr << "1. extractor_stub.cpp in the current directory" << std::endl;
+        std::cerr << "2. A C++ compiler (cl.exe or g++) in your PATH" << std::endl;
+        return false;
+    }
+
+    return std::filesystem::exists(outputPath);
+}
+
+bool Archive::combineStubWithArchive(const std::string& stubPath,
+                                     const std::vector<char>& archiveData,
+                                     const std::string& outputPath,
+                                     const AutoExecConfig& autoExec) {
+    if (!std::filesystem::exists(stubPath)) {
+        std::cerr << "Extractor stub not found: " << stubPath << std::endl;
+        return false;
+    }
+
+    // Read the stub executable
+    std::ifstream stubFile(stubPath, std::ios::binary);
+    if (!stubFile) {
+        std::cerr << "Failed to open stub file: " << stubPath << std::endl;
+        return false;
+    }
+
+    std::vector<char> stubData(std::istreambuf_iterator<char>(stubFile), {});
+    stubFile.close();
+
+    // Create the output file
+    std::ofstream outFile(outputPath, std::ios::binary);
+    if (!outFile) {
+        std::cerr << "Failed to create output file: " << outputPath << std::endl;
+        return false;
+    }
+
+    // Write stub executable
+    outFile.write(stubData.data(), stubData.size());
+
+    // Write marker
+    const char marker[] = "ARCHIVE_DATA_START_MARKER_12345";
+    outFile.write(marker, sizeof(marker) - 1);
+    
+    // Prepare command configuration structure (matching the stub's CommandConfig)
+    struct CommandConfig {
+        char command[512];
+        char arguments[512];
+        bool silent;
+        bool waitForCompletion;
+        char workingDir[256];
+    };
+    
+    CommandConfig cmdConfig = {};
+    
+    // Copy strings safely
+    if (!autoExec.command.empty()) {
+        strncpy(cmdConfig.command, autoExec.command.c_str(), sizeof(cmdConfig.command) - 1);
+    }
+    if (!autoExec.arguments.empty()) {
+        strncpy(cmdConfig.arguments, autoExec.arguments.c_str(), sizeof(cmdConfig.arguments) - 1);
+    }
+    if (!autoExec.workingDir.empty()) {
+        strncpy(cmdConfig.workingDir, autoExec.workingDir.c_str(), sizeof(cmdConfig.workingDir) - 1);
+    }
+    
+    cmdConfig.silent = autoExec.silent;
+    cmdConfig.waitForCompletion = autoExec.waitForCompletion;
+    
+    // Write command configuration
+    outFile.write(reinterpret_cast<const char*>(&cmdConfig), sizeof(cmdConfig));
+    
+    // Write archive size
+    size_t archiveSize = archiveData.size();
+    outFile.write(reinterpret_cast<const char*>(&archiveSize), sizeof(archiveSize));
+
+    // Write archive data
+    outFile.write(archiveData.data(), archiveData.size());
+
+    outFile.close();
+
+    // Make executable on Unix systems
+#ifndef _WIN32
+    std::filesystem::permissions(outputPath, 
+        std::filesystem::perms::owner_exec | 
+        std::filesystem::perms::group_exec | 
+        std::filesystem::perms::others_exec,
+        std::filesystem::perm_options::add);
+#endif
+
+    return true;
+}
+
+// Helper method to add file to a stream instead of file
+void Archive::addFileToArchiveStream(const std::filesystem::path& file, 
+                                    const std::string& archivePath,
+                                    std::ostringstream& archive, 
+                                    CompressionType compression) {
+    // Read the input file
+    std::ifstream input(file, std::ios::binary);
+    if (!input) {
+        throw std::runtime_error("Failed to open input file: " + file.string());
+    }
+
+    std::vector<char> buffer(std::istreambuf_iterator<char>(input), {});
+    input.close();
+
+    // Compress the data
+    auto compressed = compressData(buffer, compression);
+
+    // Write file header
+    FileHeader header{};
+    header.signature = SIGNATURE;
+    header.version = CURRENT_VERSION;
+    header.nameLength = static_cast<uint32_t>(archivePath.length());
+    header.compressedSize = compressed.size();
+    header.originalSize = buffer.size();
+    header.timestamp = std::filesystem::last_write_time(file).time_since_epoch().count();
+
+    archive.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    archive.write(archivePath.c_str(), header.nameLength);
+    archive.write(compressed.data(), header.compressedSize);
+
+    // Store entry information
+    entries.push_back(ArchiveEntry{
+        archivePath,
+        header.compressedSize,
+        header.originalSize,
+        header.timestamp
+    });
 }
 
 void Archive::create(const std::vector<fs::path>& files, CompressionType compression) {
