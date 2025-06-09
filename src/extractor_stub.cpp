@@ -197,7 +197,7 @@ bool extractArchive(const std::string& executablePath, const std::string& output
         int64_t timestamp;
     };
     
-    const uint32_t SIGNATURE = 0x4352414D; // "MARC"
+    const uint32_t SIGNATURE = 0x4E415649; // "IVAN"
     
     // Skip the first header (archive header)
     FileHeader header;
