@@ -18,7 +18,7 @@ public:
     ~ArchiveConsole() = default;
 
     void printUsage() const;
-    bool createArchive(const std::string& archiveName);
+    bool createArchive(const std::string& archiveName, int argc, char* argv[]);
     bool extractArchive(const std::string& archiveName, const std::string& outputDir = ".");
     bool listArchiveContents(const std::string& archiveName) const;
 

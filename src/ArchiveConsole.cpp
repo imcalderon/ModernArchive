@@ -1,6 +1,7 @@
 #include "ArchiveConsole.h"
 #include <iostream>
 #include <filesystem>
+#include <set>
 
 void ArchiveConsole::printUsage() const {
     std::cout << "Usage: archive <command> <options>\n";
@@ -10,10 +11,32 @@ void ArchiveConsole::printUsage() const {
     std::cout << "  list <archive_name>                        List contents of an archive\n";
 }
 
-bool ArchiveConsole::createArchive(const std::string& archiveName) {
+bool ArchiveConsole::createArchive(const std::string& archiveName, int argc, char* argv[]) {
     progress.startTracking("Creating archive");
     Archive archive(archiveName);
-    std::vector<std::filesystem::path> files; // TODO: Implement file list collection
+    std::vector<std::filesystem::path> files;
+    std::set<std::filesystem::path> uniqueFiles;
+    // Arguments after archiveName are files/dirs
+    for (int i = 3; i < argc; ++i) {
+        std::filesystem::path inputPath(argv[i]);
+        if (std::filesystem::is_directory(inputPath)) {
+            for (auto& entry : std::filesystem::recursive_directory_iterator(inputPath)) {
+                if (std::filesystem::is_regular_file(entry)) {
+                    uniqueFiles.insert(entry.path());
+                }
+            }
+        } else if (std::filesystem::is_regular_file(inputPath)) {
+            uniqueFiles.insert(inputPath);
+        } else {
+            std::cerr << "Warning: Skipping non-existent or unsupported path: " << inputPath << std::endl;
+        }
+    }
+    files.assign(uniqueFiles.begin(), uniqueFiles.end());
+    if (files.empty()) {
+        std::cerr << "Error: No input files found to archive.\n";
+        progress.finishTracking();
+        return false;
+    }
     archive.create(files);
     progress.finishTracking();
     return true;

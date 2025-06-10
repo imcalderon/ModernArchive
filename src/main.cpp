@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             std::string archiveName = argv[2];
-            if (!console.createArchive(archiveName)) {
+            if (!console.createArchive(archiveName, argc, argv)) {
                 std::cerr << "Error: Failed to create archive.\n";
                 return 1;
             }
