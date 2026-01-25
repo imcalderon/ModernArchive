@@ -50,6 +50,30 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
+        else if (command == "add") {
+            if (argc < 4) {
+                std::cerr << "Error: Please provide archive name and at least one file.\n";
+                console.printUsage();
+                return 1;
+            }
+            std::string archiveName = argv[2];
+            if (!console.addToArchive(archiveName, argc, argv)) {
+                std::cerr << "Error: Failed to add files to archive.\n";
+                return 1;
+            }
+        }
+        else if (command == "selfext") {
+            if (argc < 4) {
+                std::cerr << "Error: Please provide output path and at least one file.\n";
+                console.printUsage();
+                return 1;
+            }
+            std::string outputPath = argv[2];
+            if (!console.createSelfExtracting(outputPath, argc, argv)) {
+                std::cerr << "Error: Failed to create self-extracting archive.\n";
+                return 1;
+            }
+        }
         else {
             std::cerr << "Error: Unknown command '" << command << "'.\n";
             console.printUsage();
