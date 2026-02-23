@@ -150,19 +150,41 @@ void Archive::createSelfExtracting(const std::vector<std::filesystem::path>& fil
 bool Archive::buildExtractorStub(const std::string& outputPath) {
     std::cout << "Building extractor stub..." << std::endl;
     
-    // This assumes you have the extractor_stub.cpp in your project
-    // and a C++ compiler available
+    // Find extractor_stub.cpp relative to the current executable
+    std::filesystem::path stubSourcePath = "extractor_stub.cpp";
+    
+#ifdef _WIN32
+    char path[MAX_PATH];
+    if (GetModuleFileNameA(NULL, path, MAX_PATH)) {
+        std::filesystem::path exeDir = std::filesystem::path(path).parent_path();
+        // Try adjacent to exe, or in ../src (development layout)
+        if (std::filesystem::exists(exeDir / "extractor_stub.cpp")) {
+            stubSourcePath = exeDir / "extractor_stub.cpp";
+        } else if (std::filesystem::exists(exeDir.parent_path() / "src" / "extractor_stub.cpp")) {
+            stubSourcePath = exeDir.parent_path() / "src" / "extractor_stub.cpp";
+        }
+    }
+#endif
+
     std::string compileCommand;
     
 #ifdef _WIN32
     // Try to use cl.exe (Visual Studio) or g++ (MinGW)
-    compileCommand = "cl.exe /Fe:" + outputPath + " extractor_stub.cpp /EHsc";
+    const char* conda_prefix = std::getenv("CONDA_PREFIX");
+    std::string zlib_inc = "";
+    std::string zlib_lib = "";
+    if (conda_prefix) {
+        zlib_inc = " /I\"" + std::string(conda_prefix) + "\\Library\\include\"";
+        zlib_lib = " \"" + std::string(conda_prefix) + "\\Library\\lib\\zlib.lib\"";
+    }
+
+    compileCommand = "cl.exe /std:c++17 /Fe:\"" + outputPath + "\" \"" + stubSourcePath.string() + "\"" + zlib_inc + " /EHsc" + zlib_lib;
     if (std::system("cl.exe >nul 2>&1") != 0) {
         // Fall back to g++
-        compileCommand = "g++ -o " + outputPath + " extractor_stub.cpp -static";
+        compileCommand = "g++ -o \"" + outputPath + "\" \"" + stubSourcePath.string() + "\" -static";
     }
 #else
-    compileCommand = "g++ -o " + outputPath + " extractor_stub.cpp -static";
+    compileCommand = "g++ -o \"" + outputPath + "\" \"" + stubSourcePath.string() + "\" -static";
 #endif
 
     int result = std::system(compileCommand.c_str());
