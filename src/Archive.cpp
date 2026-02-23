@@ -178,7 +178,7 @@ bool Archive::buildExtractorStub(const std::string& outputPath) {
         zlib_lib = " \"" + std::string(conda_prefix) + "\\Library\\lib\\zlib.lib\"";
     }
 
-    compileCommand = "cl.exe /std:c++17 /Fe:\"" + outputPath + "\" \"" + stubSourcePath.string() + "\"" + zlib_inc + " /EHsc" + zlib_lib;
+    compileCommand = "cl.exe /std:c++17 /MT /Fe:\"" + outputPath + "\" \"" + stubSourcePath.string() + "\"" + zlib_inc + " /EHsc" + zlib_lib;
     if (std::system("cl.exe >nul 2>&1") != 0) {
         // Fall back to g++
         compileCommand = "g++ -o \"" + outputPath + "\" \"" + stubSourcePath.string() + "\" -static";
@@ -306,9 +306,12 @@ void Archive::addFileToArchiveStream(const std::filesystem::path& file,
     header.originalSize = buffer.size();
     header.timestamp = std::filesystem::last_write_time(file).time_since_epoch().count();
 
+    size_t headerOffset = archive.tellp();
     archive.write(reinterpret_cast<const char*>(&header), sizeof(header));
     archive.write(archivePath.c_str(), header.nameLength);
     archive.write(compressed.data(), header.compressedSize);
+    
+    std::cout << "Added file " << archivePath << " at offset " << headerOffset << " (signature: 0x" << std::hex << SIGNATURE << std::dec << ")" << std::endl;
 
     // Store entry information
     entries.push_back(ArchiveEntry{

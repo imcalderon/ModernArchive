@@ -39,6 +39,8 @@ bool findArchiveData(std::ifstream& file, size_t& archiveOffset, size_t& archive
     size_t fileSize = file.tellg();
     file.seekg(0, std::ios::beg);
     
+    std::cout << "Searching for archive data in " << fileSize << " bytes..." << std::endl;
+    
     // Read the entire file into memory (for small executables this is fine)
     std::vector<char> buffer(fileSize);
     file.read(buffer.data(), fileSize);
@@ -46,17 +48,22 @@ bool findArchiveData(std::ifstream& file, size_t& archiveOffset, size_t& archive
     // Search for the marker from the end of the file
     for (size_t i = fileSize - MARKER_SIZE; i > 0; --i) {
         if (std::memcmp(buffer.data() + i, ARCHIVE_MARKER, MARKER_SIZE) == 0) {
+            std::cout << "Found marker at offset " << i << std::endl;
             // Read command config (stored right after marker)
             std::memcpy(&cmdConfig, buffer.data() + i + MARKER_SIZE, sizeof(CommandConfig));
             
             // Read archive size (stored after command config)
             std::memcpy(&archiveSize, buffer.data() + i + MARKER_SIZE + sizeof(CommandConfig), sizeof(size_t));
             
+            std::cout << "Archive size: " << archiveSize << std::endl;
+            
             // Archive data starts after size field
             archiveOffset = i + MARKER_SIZE + sizeof(CommandConfig) + sizeof(size_t);
+            std::cout << "Archive data starts at: " << archiveOffset << std::endl;
             return true;
         }
     }
+    std::cerr << "Error: Marker not found!" << std::endl;
     return false;
 }
 
@@ -146,6 +153,7 @@ bool executeCommand(const CommandConfig& cmdConfig, const std::string& extractDi
 }
 
 bool extractArchive(const std::string& executablePath, const std::string& outputDir) {
+    std::cout << "Starting extraction process..." << std::endl;
     std::ifstream file(executablePath, std::ios::binary);
     if (!file) {
         std::cerr << "Error: Cannot open executable file" << std::endl;
@@ -166,18 +174,27 @@ bool extractArchive(const std::string& executablePath, const std::string& output
     
     // Extract archive data to temporary file
     fs::path tempArchive = fs::temp_directory_path() / "temp_extract.arc";
+    std::cout << "Writing temporary archive to " << tempArchive.string() << " (" << archiveSize << " bytes)..." << std::endl;
     {
         std::ofstream tempFile(tempArchive, std::ios::binary);
         if (!tempFile) {
-            std::cerr << "Error: Cannot create temporary file" << std::endl;
+            std::cerr << "Error: Cannot create temporary file: " << tempArchive.string() << " (errno: " << errno << ")" << std::endl;
             return false;
         }
         
         file.seekg(archiveOffset);
         std::vector<char> archiveData(archiveSize);
-        file.read(archiveData.data(), archiveSize);
+        if (!file.read(archiveData.data(), archiveSize)) {
+            std::cerr << "Error: Failed to read archive data from executable (read " << file.gcount() << " bytes)" << std::endl;
+            return false;
+        }
         tempFile.write(archiveData.data(), archiveSize);
+        if (!tempFile) {
+            std::cerr << "Error: Failed to write to temporary file" << std::endl;
+            return false;
+        }
     }
+    std::cout << "Temporary archive written." << std::endl;
     
     // Now extract using the Archive class logic (simplified version)
     // This is a minimal implementation - you'd want to include the full Archive extraction logic
@@ -201,20 +218,35 @@ bool extractArchive(const std::string& executablePath, const std::string& output
     
     // Skip the first header (archive header)
     FileHeader header;
-    archive.read(reinterpret_cast<char*>(&header), sizeof(header));
+    std::cout << "Reading archive header (size " << sizeof(header) << ")..." << std::endl;
+    if (!archive.read(reinterpret_cast<char*>(&header), sizeof(header))) {
+        std::cerr << "Error: Failed to read archive header. Read " << archive.gcount() << " bytes." << std::endl;
+        return false;
+    }
+    
+    std::cout << "Archive header read. Signature: 0x" << std::hex << header.signature << std::dec << std::endl;
     
     int filesExtracted = 0;
-    while (archive) {
-        if (!archive.read(reinterpret_cast<char*>(&header), sizeof(header)))
+    while (archive && !archive.eof()) {
+        size_t currentOffset = archive.tellg();
+        if (!archive.read(reinterpret_cast<char*>(&header), sizeof(header))) {
+            if (archive.eof()) break;
+            std::cerr << "Error: Failed to read file header at offset " << currentOffset << std::endl;
             break;
+        }
             
-        if (header.signature != SIGNATURE)
+        if (header.signature != SIGNATURE) {
+            if (currentOffset == archiveSize) break; // Normal end
+            std::cerr << "Error: Invalid file signature 0x" << std::hex << header.signature << " at offset " << currentOffset << std::endl;
             break;
-            
+        }
+
         // Read filename
         std::string fileName(header.nameLength, '\0');
-        if (!archive.read(&fileName[0], header.nameLength))
+        if (!archive.read(&fileName[0], header.nameLength)) {
+            std::cerr << "Error: Failed to read filename at offset " << archive.tellg() << std::endl;
             break;
+        }
             
         // Create output file path
         fs::path outputPath = fs::path(outputDir) / fileName;
@@ -222,8 +254,10 @@ bool extractArchive(const std::string& executablePath, const std::string& output
         
         // Read compressed data
         std::vector<char> compressedData(header.compressedSize);
-        if (!archive.read(compressedData.data(), header.compressedSize))
+        if (!archive.read(compressedData.data(), header.compressedSize)) {
+            std::cerr << "Error: Failed to read data for " << fileName << std::endl;
             break;
+        }
             
         // Decompress data using zlib
         std::vector<char> decompressedData;
@@ -234,10 +268,12 @@ bool extractArchive(const std::string& executablePath, const std::string& output
         } else {
             // Decompress using zlib
             decompressedData.resize(header.originalSize);
-            z_stream strm = {};
+            z_stream strm;
+            memset(&strm, 0, sizeof(strm));
             
-            if (inflateInit(&strm) != Z_OK) {
-                std::cerr << "Error: Failed to initialize decompression for " << fileName << std::endl;
+            int ret = inflateInit(&strm);
+            if (ret != Z_OK) {
+                std::cerr << "Error: Failed to initialize decompression for " << fileName << " (code: " << ret << ")" << std::endl;
                 continue;
             }
             
@@ -246,9 +282,10 @@ bool extractArchive(const std::string& executablePath, const std::string& output
             strm.next_out = reinterpret_cast<Bytef*>(decompressedData.data());
             strm.avail_out = static_cast<uInt>(header.originalSize);
             
-            if (inflate(&strm, Z_FINISH) != Z_STREAM_END) {
+            ret = inflate(&strm, Z_FINISH);
+            if (ret != Z_STREAM_END) {
                 inflateEnd(&strm);
-                std::cerr << "Error: Decompression failed for " << fileName << std::endl;
+                std::cerr << "Error: Decompression failed for " << fileName << " (code: " << ret << ")" << std::endl;
                 continue;
             }
             inflateEnd(&strm);
@@ -262,11 +299,11 @@ bool extractArchive(const std::string& executablePath, const std::string& output
         }
         
         outFile.write(decompressedData.data(), header.originalSize);
-        
         filesExtracted++;
     }
     
     // Clean up temporary file
+    archive.close();
     fs::remove(tempArchive);
     
     std::cout << "Successfully extracted " << filesExtracted << " files to " << outputDir << std::endl;
